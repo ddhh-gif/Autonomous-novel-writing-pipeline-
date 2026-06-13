@@ -1,0 +1,14 @@
+llm:
+  model: claude-sonnet-4-6
+  temperature_creative: 0.9
+  temperature_structured: 0.2
+  max_tokens: 4096
+  max_retries: 3
+
+pipeline:
+  max_turns_per_scene: 40
+  max_rollbacks_per_scene: 3
+  target_words: 20000
+
+db:
+  path: novel.db
