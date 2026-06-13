@@ -18,7 +18,7 @@ def _make_response(content: str):
 
 
 def test_call_prose_returns_text(cfg):
-    with patch("novel_pipeline.llm.anthropic.Anthropic") as MockAnth:
+    with patch("anthropic.Anthropic") as MockAnth:
         instance = MockAnth.return_value
         instance.messages.create.return_value = _make_response("好的故事")
         client = LLMClient(cfg)
@@ -28,7 +28,7 @@ def test_call_prose_returns_text(cfg):
 
 def test_call_structured_parses_json(cfg):
     payload = {"changes": []}
-    with patch("novel_pipeline.llm.anthropic.Anthropic") as MockAnth:
+    with patch("anthropic.Anthropic") as MockAnth:
         instance = MockAnth.return_value
         instance.messages.create.return_value = _make_response(json.dumps(payload))
         client = LLMClient(cfg)
@@ -42,7 +42,7 @@ def test_call_structured_parses_json(cfg):
 def test_call_structured_strips_markdown_fences(cfg):
     payload = {"changes": []}
     raw = f"```json\n{json.dumps(payload)}\n```"
-    with patch("novel_pipeline.llm.anthropic.Anthropic") as MockAnth:
+    with patch("anthropic.Anthropic") as MockAnth:
         instance = MockAnth.return_value
         instance.messages.create.return_value = _make_response(raw)
         client = LLMClient(cfg)
@@ -55,7 +55,7 @@ def test_call_structured_strips_markdown_fences(cfg):
 def test_call_structured_retries_on_bad_json(cfg):
     good = json.dumps({"changes": []})
     responses = [_make_response("not json"), _make_response(good)]
-    with patch("novel_pipeline.llm.anthropic.Anthropic") as MockAnth:
+    with patch("anthropic.Anthropic") as MockAnth:
         instance = MockAnth.return_value
         instance.messages.create.side_effect = responses
         client = LLMClient(cfg)
@@ -67,7 +67,7 @@ def test_call_structured_retries_on_bad_json(cfg):
 
 
 def test_call_structured_raises_after_max_retries(cfg):
-    with patch("novel_pipeline.llm.anthropic.Anthropic") as MockAnth:
+    with patch("anthropic.Anthropic") as MockAnth:
         instance = MockAnth.return_value
         instance.messages.create.return_value = _make_response("bad json always")
         client = LLMClient(cfg)

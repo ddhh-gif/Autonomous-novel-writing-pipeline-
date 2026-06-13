@@ -6,6 +6,9 @@ import yaml
 @dataclass
 class LLMConfig:
     model: str = "claude-sonnet-4-6"
+    backend: str = "anthropic"          # anthropic | openai | openai_compat
+    api_key_env: str = "ANTHROPIC_API_KEY"
+    base_url: str | None = None         # openai_compat 时填厂家 endpoint
     temperature_creative: float = 0.9
     temperature_structured: float = 0.2
     max_tokens: int = 4096
