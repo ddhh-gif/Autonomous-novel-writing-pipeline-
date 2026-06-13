@@ -1,0 +1,20 @@
+根据以下信息，生成小说的幕结构（三幕或四幕）。
+
+前提：{{ premise }}
+世界设定：{{ world_bible.setting }}
+角色：
+{% for c in characters %}
+- {{ c.name }}（{{ c.arc }}）
+{% endfor %}
+
+返回JSON：
+{
+  "acts": [
+    {
+      "act_number": 1,
+      "title": "幕标题",
+      "description": "这一幕发生什么",
+      "turning_point": "这一幕结束时的转折点"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+为以下章节生成场景约束盒（ConstraintBox）。每章1-3个场景。
+
+章节ID：{{ chapter.id }}
+章节目标：{{ chapter.goal }}
+地点：{{ chapter.location }}
+在场角色：{{ chapter.present_character_ids | join(', ') }}
+
+返回JSON：
+{
+  "scenes": [
+    {
+      "scene_id": "{{ chapter.id }}_s1",
+      "chapter_id": "{{ chapter.id }}",
+      "entry_state": "进入这场戏时的状态",
+      "exit_state": "必须达成的退出状态",
+      "required_events": ["必须发生的事件1", "必须发生的事件2"],
+      "present_character_ids": {{ chapter.present_character_ids | tojson }},
+      "location": "{{ chapter.location }}",
+      "pov": null,
+      "order_idx": 1
+    }
+  ]
+}

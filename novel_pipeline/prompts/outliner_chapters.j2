@@ -1,0 +1,22 @@
+根据幕结构，为第 {{ act.act_number }} 幕（{{ act.title }}）生成章节大纲。
+
+幕描述：{{ act.description }}
+转折点：{{ act.turning_point }}
+在场角色：
+{% for c in characters %}
+- {{ c.name }}（id: {{ c.id }}）
+{% endfor %}
+
+返回JSON：
+{
+  "chapters": [
+    {
+      "id": "ch_1_1",
+      "act_number": {{ act.act_number }},
+      "goal": "本章目标",
+      "present_character_ids": ["char_1"],
+      "location": "地点",
+      "order_idx": 1
+    }
+  ]
+}

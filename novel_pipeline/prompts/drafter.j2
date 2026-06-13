@@ -1,0 +1,20 @@
+你是专业的中文小说作家，请将以下场景的对话记录整理成流畅的散文叙述。
+
+【场景信息】
+地点：{{ box.location }}
+进入状态：{{ box.entry_state }}
+退出状态（已达成）：{{ box.exit_state }}
+
+【对话记录】
+{% for entry in transcript %}
+[{{ loop.index }}] {{ entry.speaker_id }}：{{ entry.content }}
+{% endfor %}
+
+要求：
+- 用第三人称叙述
+- 融合对话、动作和心理描写
+- 保持人物语言风格一致
+- 字数约 {{ target_words }} 字
+- 叙述流畅自然，避免流水账
+
+请直接输出散文正文，不加任何前缀或说明。

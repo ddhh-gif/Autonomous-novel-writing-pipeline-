@@ -1,0 +1,30 @@
+你是严格的小说编辑，负责校验以下散文的质量和一致性。
+
+【散文内容】
+{{ prose }}
+
+【当前世界状态】
+角色状态：
+{% for char_id, state in character_states.items() %}
+- {{ char_id }}：位置={{ state.location }}，状态={{ state.status }}，情绪={{ state.emotional_state }}
+  已知事实：{{ state.knowledge | join('；') }}
+{% endfor %}
+
+请从以下维度检查，返回JSON：
+{
+  "issues": [
+    {
+      "severity": "warn/revise/rollback",
+      "description": "问题描述",
+      "location": "出现问题的文字片段（可为null）"
+    }
+  ],
+  "passed": true
+}
+
+severity说明：
+- warn：轻微问题，可忽略继续
+- revise：需要局部修订
+- rollback：严重矛盾（如死亡角色登场、信息差泄露），需要回滚
+
+如无问题，返回 {"issues": [], "passed": true}

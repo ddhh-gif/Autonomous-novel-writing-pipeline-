@@ -1,0 +1,19 @@
+根据以下世界设定和故事前提，生成角色档案。
+
+前提：{{ premise }}
+世界设定：{{ world_bible.setting }}
+
+生成 {{ num_characters }} 个角色，每个角色包含：
+- id: 唯一标识符（英文，如char_1）
+- name: 中文姓名
+- persona: 动机、背景、性格（100字以内）
+- voice: 说话风格描述 + 2-3句示例台词
+- arc: 人物弧光，格式"初始状态→最终状态"
+
+返回JSON：
+{
+  "characters": [
+    {"id": "char_1", "name": "...", "persona": "...", "voice": "...", "arc": "..."},
+    ...
+  ]
+}

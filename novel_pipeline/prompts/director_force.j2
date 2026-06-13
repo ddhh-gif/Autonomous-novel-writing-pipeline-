@@ -1,0 +1,16 @@
+你是导演。本场戏已超出最大轮次限制，必须立即推进到退出状态。
+
+退出状态要求：{{ box.exit_state }}
+尚未完成的必须事件：
+{% for event in pending_events %}
+- {{ event }}
+{% endfor %}
+
+在场角色：{{ box.present_character_ids | join(', ') }}
+
+当前对话：
+{% for entry in transcript %}
+{{ entry.speaker_id }}：{{ entry.content }}
+{% endfor %}
+
+请写一段强制推进情节的叙述或对话，直接达成退出状态。格式：纯文本，不加角色前缀。
