@@ -197,6 +197,26 @@ db:
   path: novel.db                     # SQLite 数据库路径（":memory:" 用于测试）
 ```
 
+```
+llm:
+  backend: openai_compat  # 若非 Anthropic API 需要加这一行
+  model: deepseek-chat
+  api_key_env: DEEPSEEK_API_KEY
+  base_url: https://api.deepseek.com
+  temperature_creative: 0.9
+  temperature_structured: 0.2
+  max_tokens: 4096
+  max_retries: 3
+
+pipeline:
+  max_turns_per_scene: 40
+  max_rollbacks_per_scene: 3
+  target_words: 20000
+
+db:
+  path: novel.db
+
+  
 ---
 
 ## 数据模型
