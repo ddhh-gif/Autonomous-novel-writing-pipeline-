@@ -1,6 +1,6 @@
 # Novel Pipeline
 
-自主中文长篇小说生成系统。基于 Anthropic Messages API，通过多 Agent 协作、严格状态管控和逐场景检查点，生成约 2 万字、单情节线、3–5 个角色的短篇小说。
+自主中文长篇小说生成系统。基于 Anthropic Messages API 支持多种厂家API格式，通过多 Agent 协作、严格状态管控和逐场景检查点，生成约 2 万字、单情节线、3–5 个角色的短篇小说。
 
 ---
 
