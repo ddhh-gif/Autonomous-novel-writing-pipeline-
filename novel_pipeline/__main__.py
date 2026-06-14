@@ -108,7 +108,14 @@ def main():
             for w in report.warnings:
                 print(f"[警告] {w}")
         elif args.char_command == "regen":
-            char = orch.characters_regen(args.id, premise=args.premise)
+            try:
+                char = orch.characters_regen(args.id, premise=args.premise)
+            except KeyError:
+                print(f"错误：找不到角色 {args.id!r}（用 characters list 查看现有角色）")
+                sys.exit(1)
+            except RuntimeError as e:
+                print(f"错误：{e}")
+                sys.exit(1)
             print(json.dumps(char.model_dump(exclude_none=True), ensure_ascii=False, indent=2))
 
 

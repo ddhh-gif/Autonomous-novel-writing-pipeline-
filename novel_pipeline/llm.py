@@ -23,7 +23,18 @@ def _strip_fences(text: str) -> str:
 class LLMClient:
     def __init__(self, config: LLMConfig):
         self._cfg = config
-        self._call_raw: Callable[[str, str, float], str]
+        if config.backend not in ("anthropic", "openai", "openai_compat"):
+            raise ValueError(
+                f"Unknown backend: {config.backend!r}. Use 'anthropic', 'openai', or 'openai_compat'."
+            )
+        # 底层 SDK client 惰性创建：仅在真正调用 LLM 时才需要 API key，
+        # 这样无需调用模型的命令（如 characters list / sync）不会因缺 key 而崩溃。
+        self._call_raw: Callable[[str, str, float], str] | None = None
+
+    def _ensure_client(self) -> Callable[[str, str, float], str]:
+        if self._call_raw is not None:
+            return self._call_raw
+        config = self._cfg
 
         if config.backend == "anthropic":
             import anthropic
@@ -42,8 +53,7 @@ class LLMClient:
                 return msg.content[0].text
 
             self._call_raw = _call_anthropic
-
-        elif config.backend in ("openai", "openai_compat"):
+        else:
             from openai import OpenAI
             kwargs: dict = {"api_key": os.environ.get(config.api_key_env, "")}
             if config.base_url:
@@ -64,17 +74,17 @@ class LLMClient:
 
             self._call_raw = _call_openai
 
-        else:
-            raise ValueError(f"Unknown backend: {config.backend!r}. Use 'anthropic', 'openai', or 'openai_compat'.")
+        return self._call_raw
 
     def call_prose(self, system: str, prompt: str) -> str:
-        return self._call_raw(system, prompt, self._cfg.temperature_creative)
+        return self._ensure_client()(system, prompt, self._cfg.temperature_creative)
 
     def call_structured(self, system: str, prompt: str, response_model: Type[T]) -> T:
+        call_raw = self._ensure_client()
         structured_system = system + "\n\n只返回JSON，无前后缀，无markdown围栏。"
         last_err: Exception | None = None
         for _ in range(self._cfg.max_retries):
-            raw = self._call_raw(structured_system, prompt, self._cfg.temperature_structured)
+            raw = call_raw(structured_system, prompt, self._cfg.temperature_structured)
             try:
                 return response_model.model_validate(json.loads(_strip_fences(raw)))
             except Exception as e:

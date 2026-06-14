@@ -17,6 +17,17 @@ def _make_response(content: str):
     return msg
 
 
+def test_construction_is_lazy_without_credentials():
+    # 构造时不应触碰底层 SDK（因此无需 API key），便于纯读命令使用。
+    client = LLMClient(LLMConfig(backend="openai_compat", model="x", api_key_env="NOPE_KEY"))
+    assert client is not None  # 不抛异常
+
+
+def test_unknown_backend_raises_eagerly():
+    with pytest.raises(ValueError):
+        LLMClient(LLMConfig(backend="bogus", model="x"))
+
+
 def test_call_prose_returns_text(cfg):
     with patch("anthropic.Anthropic") as MockAnth:
         instance = MockAnth.return_value

@@ -187,3 +187,55 @@ def test_regen_rewrites_modules(llm, db, tmp_path):
     out = loader.regen("c1")
     assert out.dialogue_mode.assertiveness == "新姿态"
     assert db.get_character("c1").background.occupation == "新职业"
+
+
+# ---------- 防御性边角 ----------
+
+def test_sync_before_world_bible_does_not_crash(llm, db, tmp_path):
+    # 没有世界设定时 sync 仍能登记角色，跳过补全并给出警告，不抛异常。
+    db_no_wb = Persistence(":memory:")
+    _write_seed(tmp_path, "c1.yaml", {"id": "c1", "name": "甲"})  # 只有 name
+    loader = CharactersLoader(
+        llm=llm, persistence=db_no_wb,
+        characters_dir=str(tmp_path / "characters"), auto_enrich=True,
+    )
+    report = loader.sync()
+    assert "c1" in report.added
+    assert report.warnings  # 提示跳过补全
+    llm.call_structured.assert_not_called()
+
+
+def test_regen_before_world_bible_raises_runtimeerror(llm, tmp_path):
+    db_no_wb = Persistence(":memory:")
+    db_no_wb.save_character(CharacterProfile(id="c1", name="甲", persona="p", voice="v", arc="a→b"))
+    loader = CharactersLoader(
+        llm=llm, persistence=db_no_wb,
+        characters_dir=str(tmp_path / "characters"), auto_enrich=True,
+    )
+    with pytest.raises(RuntimeError):
+        loader.regen("c1")
+
+
+def test_load_seeds_skips_malformed_files(llm, db, tmp_path):
+    d = tmp_path / "characters"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "good.yaml").write_text("id: good\nname: 好的\n", encoding="utf-8")
+    (d / "syntax.yaml").write_text("name: [unclosed\n", encoding="utf-8")           # YAML 语法错
+    (d / "wrongtype.yaml").write_text(                                              # 字段类型错
+        "id: bad\nname: 阿萍\nspeech_style:\n  catchphrases: 不是列表\n", encoding="utf-8")
+    (d / "notmap.yaml").write_text("- 1\n- 2\n", encoding="utf-8")                  # 顶层非映射
+    loader = _loader(llm, db, tmp_path)
+    seeds = loader.load_seeds()
+    assert [s.id for s in seeds] == ["good"]
+
+
+def test_sync_preserves_unchanged_file(llm, db, tmp_path):
+    # 完整角色（无需补全）经 sync 后文件不应被重写。
+    seed_path = tmp_path / "characters" / "c1.yaml"
+    seed_path.parent.mkdir(parents=True, exist_ok=True)
+    original = "id: c1\nname: 甲\npersona: p\nvoice: v\narc: a→b\n# 我的注释\n"
+    seed_path.write_text(original, encoding="utf-8")
+    # 提供 world bible 但角色仍缺模块——auto_enrich 关闭，故不改动。
+    loader = _loader(llm, db, tmp_path, auto_enrich=False)
+    loader.sync()
+    assert seed_path.read_text(encoding="utf-8") == original  # 注释与格式保留

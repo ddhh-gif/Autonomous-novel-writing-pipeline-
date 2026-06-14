@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from novel_pipeline.models import (
     CharacterProfile, CharacterState, WorldBible,
     Background, SpeechStyle, DialogueMode,
@@ -68,14 +68,23 @@ class CharactersLoader:
             return []
         seeds: list[CharacterProfile] = []
         for path in sorted([*self._dir.glob("*.yaml"), *self._dir.glob("*.yml")]):
-            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError as e:
+                print(f"[警告] 跳过无法解析的角色文件 {path.name}：{e}")
+                continue
             if not isinstance(raw, dict):
+                print(f"[警告] 跳过格式不对的角色文件 {path.name}（顶层应为映射）")
                 continue
             raw.setdefault("id", path.stem)
             raw.setdefault("name", path.stem)
             for core in ("persona", "voice", "arc"):
                 raw.setdefault(core, "")
-            seeds.append(CharacterProfile(**raw))
+            try:
+                seeds.append(CharacterProfile(**raw))
+            except ValidationError as e:
+                print(f"[警告] 跳过字段有误的角色文件 {path.name}：{e}")
+                continue
         return seeds
 
     def write_back(self, char: CharacterProfile) -> Path:
@@ -105,14 +114,23 @@ class CharactersLoader:
             missing = ["core", *missing]
         return missing
 
+    def _world_bible_or_none(self) -> WorldBible | None:
+        try:
+            return self._db.get_world_bible()
+        except KeyError:
+            return None
+
     def enrich(
         self,
         char: CharacterProfile,
         premise: str | None,
-        world_bible: WorldBible,
+        world_bible: WorldBible | None,
     ) -> CharacterProfile:
-        """补全缺失的核心字段 / 背景 / 语言风格 / 对话模式。无缺失则原样返回。"""
-        if not self._auto_enrich:
+        """补全缺失的核心字段 / 背景 / 语言风格 / 对话模式。无缺失则原样返回。
+
+        缺少世界设定（world_bible 为 None）时无法补全，原样返回。
+        """
+        if not self._auto_enrich or world_bible is None:
             return char
         missing = self._missing(char)
         if not missing:
@@ -156,27 +174,43 @@ class CharactersLoader:
         """prewriting 阶段调用：有种子文件则补全，否则整批生成；最后回写文件。"""
         seeds = self.load_seeds()
         if seeds:
-            chars = [self.enrich(c, premise, world_bible) for c in seeds]
+            chars = []
+            for seed in seeds:
+                enriched = self.enrich(seed, premise, world_bible)
+                # 仅在补全改动了内容时回写，保住作者手写的格式与注释。
+                if enriched != seed:
+                    self.write_back(enriched)
+                chars.append(enriched)
         else:
             chars = [
                 self.enrich(c, premise, world_bible)
                 for c in self.generate_batch(premise, world_bible, num_characters)
             ]
-        for c in chars:
-            self.write_back(c)
+            for c in chars:  # 批量生成的新角色尚无文件，必须落盘
+                self.write_back(c)
         return chars
 
     def sync(self, premise: str | None = None) -> SyncReport:
         """把 characters/ 目录的增 / 删 / 改对账进数据库。"""
-        world_bible = self._db.get_world_bible()
+        world_bible = self._world_bible_or_none()
         report = SyncReport()
 
         seeds = {c.id: c for c in self.load_seeds()}
         db_chars = {c.id: c for c in self._db.get_all_characters(include_removed=True)}
 
+        if world_bible is None and self._auto_enrich and \
+                any(s.missing_modules() or not (s.persona and s.voice and s.arc)
+                    for s in seeds.values()):
+            report.warnings.append(
+                "尚未生成世界设定（请先运行 run），本次跳过自动补全；"
+                "缺失的设计模块会在下次 run 时补全。"
+            )
+
         for cid, seed in seeds.items():
             enriched = self.enrich(seed, premise, world_bible)
-            self.write_back(enriched)
+            # 仅在自动补全确实改动了内容时回写，避免清掉作者手写的格式与注释。
+            if enriched != seed:
+                self.write_back(enriched)
             if cid not in db_chars:
                 self._db.save_character(enriched)
                 self._db.init_character_state(CharacterState(
@@ -207,7 +241,11 @@ class CharactersLoader:
 
     def regen(self, char_id: str, premise: str | None = None) -> CharacterProfile:
         """重写某个角色：清空三个设计模块后重新自动生成并回写。"""
-        world_bible = self._db.get_world_bible()
+        world_bible = self._world_bible_or_none()
+        if world_bible is None:
+            raise RuntimeError(
+                "尚未生成世界设定（请先运行 run），无法重新生成角色设计模块。"
+            )
         char = self._db.get_character(char_id)
         char = char.model_copy(update={
             "background": None, "speech_style": None, "dialogue_mode": None,
