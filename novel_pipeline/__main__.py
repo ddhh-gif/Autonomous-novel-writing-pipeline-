@@ -51,6 +51,18 @@ def main():
     ex_p.add_argument("--config", default="config.yaml")
     ex_p.add_argument("--out", default="novel_draft.txt", help="输出文件路径（默认 novel_draft.txt）")
 
+    ch_p = sub.add_parser("characters", help="角色档案管理（一人一档 YAML）")
+    ch_sub = ch_p.add_subparsers(dest="char_command")
+    ch_list = ch_sub.add_parser("list", help="列出全部角色及其填充情况")
+    ch_list.add_argument("--config", default="config.yaml")
+    ch_sync = ch_sub.add_parser("sync", help="将 characters/ 目录的增删改对账进数据库")
+    ch_sync.add_argument("--config", default="config.yaml")
+    ch_sync.add_argument("--premise", default=None, help="可选，用于自动补全时的故事前提")
+    ch_regen = ch_sub.add_parser("regen", help="重写某个角色的设计模块")
+    ch_regen.add_argument("--config", default="config.yaml")
+    ch_regen.add_argument("--id", required=True, help="角色 ID（见 characters list）")
+    ch_regen.add_argument("--premise", default=None, help="可选，故事前提")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -81,6 +93,23 @@ def main():
         from novel_pipeline.exporter import export
         cfg = load_config(args.config)
         export(db_path=cfg.db.path, out_path=args.out)
+
+    elif args.command == "characters":
+        import json
+        if not args.char_command:
+            ch_p.print_help()
+            sys.exit(1)
+        orch = Orchestrator(config_path=args.config)
+        if args.char_command == "list":
+            print(json.dumps(orch.characters_list(), ensure_ascii=False, indent=2))
+        elif args.char_command == "sync":
+            report = orch.characters_sync(premise=args.premise)
+            print(json.dumps(report.__dict__, ensure_ascii=False, indent=2))
+            for w in report.warnings:
+                print(f"[警告] {w}")
+        elif args.char_command == "regen":
+            char = orch.characters_regen(args.id, premise=args.premise)
+            print(json.dumps(char.model_dump(exclude_none=True), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

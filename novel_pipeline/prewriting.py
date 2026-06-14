@@ -1,19 +1,22 @@
 from __future__ import annotations
-from pydantic import BaseModel
 from novel_pipeline.models import WorldBible, CharacterProfile, CharacterState
 from novel_pipeline.persistence import Persistence
 from novel_pipeline.llm import LLMClient
+from novel_pipeline.characters_loader import CharactersLoader
 from novel_pipeline.prompts.loader import render
 
 
-class _CharacterListResponse(BaseModel):
-    characters: list[CharacterProfile]
-
-
 class PrewritingModule:
-    def __init__(self, llm: LLMClient, persistence: Persistence):
+    def __init__(
+        self,
+        llm: LLMClient,
+        persistence: Persistence,
+        characters_loader: CharactersLoader | None = None,
+    ):
         self._llm = llm
         self._db = persistence
+        # 默认 loader：无 YAML 种子时退回整批生成的行为。
+        self._loader = characters_loader or CharactersLoader(llm, persistence)
 
     def run(self, premise: str, num_characters: int) -> tuple[WorldBible, list[CharacterProfile]]:
         world_bible = self._llm.call_structured(
@@ -23,17 +26,9 @@ class PrewritingModule:
         )
         self._db.save_world_bible(world_bible)
 
-        char_response = self._llm.call_structured(
-            system="你是小说角色设计专家。只返回JSON。",
-            prompt=render(
-                "prewriting_character.j2",
-                premise=premise,
-                world_bible=world_bible,
-                num_characters=num_characters,
-            ),
-            response_model=_CharacterListResponse,
+        characters = self._loader.prepare_characters(
+            premise=premise, world_bible=world_bible, num_characters=num_characters,
         )
-        characters = char_response.characters
         for char in characters:
             self._db.save_character(char)
             self._db.init_character_state(

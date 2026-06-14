@@ -5,7 +5,27 @@ from novel_pipeline.models import (
     CharacterProfile, WorldBible, ActBeat, Chapter, ConstraintBox,
     CharacterState, StateChangeProposal, SceneTranscriptEntry,
     Manuscript, CheckpointRecord,
+    Background, SpeechStyle, DialogueMode,
 )
+
+_CHAR_MODULE_TYPES = {
+    "background": Background,
+    "speech_style": SpeechStyle,
+    "dialogue_mode": DialogueMode,
+}
+
+
+def _dump_module(module) -> str | None:
+    return json.dumps(module.model_dump(), ensure_ascii=False) if module is not None else None
+
+
+def _row_to_character(row) -> CharacterProfile:
+    d = dict(row)
+    d.pop("removed", None)
+    for field, model in _CHAR_MODULE_TYPES.items():
+        raw = d.get(field)
+        d[field] = model(**json.loads(raw)) if raw else None
+    return CharacterProfile(**d)
 
 _VALID_CHAR_FIELDS = {"location", "emotional_state", "status", "knowledge"}
 
@@ -18,7 +38,9 @@ _FIELD_SQL = {
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS characters (
     id TEXT PRIMARY KEY, name TEXT NOT NULL,
-    persona TEXT NOT NULL, voice TEXT NOT NULL, arc TEXT NOT NULL
+    persona TEXT NOT NULL, voice TEXT NOT NULL, arc TEXT NOT NULL,
+    background TEXT, speech_style TEXT, dialogue_mode TEXT,
+    removed INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS world_bible (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -89,12 +111,36 @@ class Persistence:
 
     def _init_schema(self):
         self._conn.executescript(SCHEMA)
+        self._migrate_characters()
         self._conn.commit()
 
+    def _migrate_characters(self):
+        """为旧版数据库补齐新增列，保持向后兼容。"""
+        existing = {row["name"] for row in
+                    self._conn.execute("PRAGMA table_info(characters)").fetchall()}
+        additions = {
+            "background": "ALTER TABLE characters ADD COLUMN background TEXT",
+            "speech_style": "ALTER TABLE characters ADD COLUMN speech_style TEXT",
+            "dialogue_mode": "ALTER TABLE characters ADD COLUMN dialogue_mode TEXT",
+            "removed": "ALTER TABLE characters ADD COLUMN removed INTEGER NOT NULL DEFAULT 0",
+        }
+        for col, sql in additions.items():
+            if col not in existing:
+                self._conn.execute(sql)
+
     def save_character(self, char: CharacterProfile) -> None:
+        # ON CONFLICT 升级而非替换，保留软删除标记（removed）不被重置。
         self._conn.execute(
-            "INSERT OR REPLACE INTO characters VALUES (?,?,?,?,?)",
-            (char.id, char.name, char.persona, char.voice, char.arc),
+            "INSERT INTO characters"
+            " (id, name, persona, voice, arc, background, speech_style, dialogue_mode)"
+            " VALUES (?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET"
+            " name=excluded.name, persona=excluded.persona, voice=excluded.voice,"
+            " arc=excluded.arc, background=excluded.background,"
+            " speech_style=excluded.speech_style, dialogue_mode=excluded.dialogue_mode",
+            (char.id, char.name, char.persona, char.voice, char.arc,
+             _dump_module(char.background), _dump_module(char.speech_style),
+             _dump_module(char.dialogue_mode)),
         )
         self._conn.commit()
 
@@ -102,11 +148,32 @@ class Persistence:
         row = self._conn.execute("SELECT * FROM characters WHERE id=?", (char_id,)).fetchone()
         if not row:
             raise KeyError(char_id)
-        return CharacterProfile(**dict(row))
+        return _row_to_character(row)
 
-    def get_all_characters(self) -> list[CharacterProfile]:
-        rows = self._conn.execute("SELECT * FROM characters").fetchall()
-        return [CharacterProfile(**dict(r)) for r in rows]
+    def get_all_characters(self, include_removed: bool = False) -> list[CharacterProfile]:
+        sql = "SELECT * FROM characters"
+        if not include_removed:
+            sql += " WHERE removed = 0"
+        rows = self._conn.execute(sql).fetchall()
+        return [_row_to_character(r) for r in rows]
+
+    def set_character_removed(self, char_id: str, removed: bool) -> None:
+        """软删除 / 恢复一个角色。已生成的稿件与对话记录不受影响。"""
+        cur = self._conn.execute(
+            "UPDATE characters SET removed=? WHERE id=?",
+            (1 if removed else 0, char_id),
+        )
+        if cur.rowcount == 0:
+            raise KeyError(char_id)
+        self._conn.commit()
+
+    def is_character_removed(self, char_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT removed FROM characters WHERE id=?", (char_id,)
+        ).fetchone()
+        if not row:
+            raise KeyError(char_id)
+        return bool(row["removed"])
 
     def save_world_bible(self, wb: WorldBible) -> None:
         self._conn.execute(

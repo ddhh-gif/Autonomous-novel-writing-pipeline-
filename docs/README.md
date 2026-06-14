@@ -174,6 +174,63 @@ Checkpoint ID 可从 `status` 输出或直接查询数据库获取：
 sqlite3 novel.db "SELECT id, stage, scene_id, created_at FROM checkpoints ORDER BY created_at DESC LIMIT 10;"
 ```
 
+### `characters` — 角色档案管理（一人一档）
+
+角色以「一人一档」YAML 形式存放在 `characters/` 目录（路径由 `pipeline.characters_dir` 配置），是可手动编辑的真相源；数据库只是运行期缓存。`background` / `speech_style` / `dialogue_mode` 三个模块均可选，留空会由 prewriting 阶段调用 LLM 自动补全，并**回写**到对应 YAML 供作者查看微调。
+
+单个角色文件示例 `characters/char_1.yaml`：
+
+```yaml
+id: char_1
+name: 林深
+persona: 孤僻的私家侦探，不信任任何人
+voice: 冷峻、惜字如金
+arc: 孤僻 → 学会信任搭档
+background:
+  origin: 雾港老城区
+  occupation: 私家侦探
+  formative_events:
+    - 童年目睹的那场火灾
+  secrets:
+    - 真名并非林深
+speech_style:
+  language_register: 冷峻书面
+  sentence_length: 短促
+  vocabulary: 爱用专业术语、忌口语脏话
+  dialect_accent: 略带北方腔
+  catchphrases:
+    - "线索不会撒谎。"
+  verbal_tics: 说话前习惯停顿半拍
+dialogue_mode:
+  assertiveness: 强势
+  directness: 迂回
+  humor: 冷幽默
+  emotional_expression: 极度克制
+  interaction_patterns:
+    - 用反问代替回答
+  taboo_topics:
+    - 自己的过去
+```
+
+随时增 / 删 / 改 / 重写角色（仅影响**之后**生成的场景，已成稿内容不被追溯修改）：
+
+```bash
+# 查看全部角色及各模块填充情况
+python -m novel_pipeline characters list --config config.yaml
+
+# 编辑 / 新建 / 删除 characters/*.yaml 后，对账进数据库
+python -m novel_pipeline characters sync --config config.yaml
+#  · 新增文件      → 缺失模块自动补全后入库
+#  · 删除文件      → 数据库软删除该角色（记录保留，不再登场）
+#                    若它仍出现在未来场景出场名单，sync 会给出警告
+#  · 修改文件      → 更新入库
+
+# 重写某个角色的三个设计模块（清空后重新自动生成并回写文件）
+python -m novel_pipeline characters regen --id char_2 --config config.yaml
+```
+
+> **新建只写 name 也可以**：`characters sync` 会自动补全 persona/voice/arc 及三个设计模块。
+
 ---
 
 ## 配置参考
@@ -192,6 +249,8 @@ pipeline:
   max_turns_per_scene: 40            # 单场景最大对话轮数（防无限循环）
   max_rollbacks_per_scene: 3         # 单场景 Critic 触发回滚的最大次数
   target_words: 20000                # 全书目标字数（均摊到各场景）
+  characters_dir: characters         # 一人一档 YAML 目录（可手动增删改）
+  auto_enrich: true                  # 自动补全角色缺失的背景/语言风格/对话模式
 
 db:
   path: novel.db                     # SQLite 数据库路径（":memory:" 用于测试）
@@ -232,6 +291,32 @@ class CharacterProfile(BaseModel):
     persona: str             # 动机、背景、性格描述
     voice: str               # 说话风格 + 2–3 句示例台词（prompt few-shot）
     arc: str                 # 人物弧光："初始状态 → 终态"
+    # 可设计的扩展模块（均可选，留空由 prewriting 阶段自动补全）
+    background: Background | None        # 出身/职业/关键经历/秘密
+    speech_style: SpeechStyle | None     # 语域/句长/用词/口音/口头禅/语言习惯
+    dialogue_mode: DialogueMode | None   # 强势含蓄/直接迂回/幽默/情绪外露/互动手法/回避话题
+
+class Background(BaseModel):
+    origin: str | None                   # 出身 / 籍贯 / 家庭
+    occupation: str | None               # 职业 / 身份
+    formative_events: list[str]          # 塑造性格的关键经历
+    secrets: list[str]                   # 不愿示人的秘密
+
+class SpeechStyle(BaseModel):
+    language_register: str | None        # 语域：口语 / 正式 / 书面 / 市井…
+    sentence_length: str | None          # 句长偏好
+    vocabulary: str | None               # 用词偏好
+    dialect_accent: str | None           # 方言 / 口音
+    catchphrases: list[str]              # 口头禅
+    verbal_tics: str | None              # 语言习惯（如说话前停顿）
+
+class DialogueMode(BaseModel):
+    assertiveness: str | None            # 强势 / 含蓄
+    directness: str | None               # 直接 / 迂回
+    humor: str | None                    # 幽默感
+    emotional_expression: str | None     # 情绪外露程度
+    interaction_patterns: list[str]      # 惯用互动手法
+    taboo_topics: list[str]              # 回避话题
 
 class WorldBible(BaseModel):
     setting: str             # 时代背景、地理描述
@@ -397,7 +482,8 @@ Persistence.save_manuscript(Manuscript(scene_id, prose, ...))
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `Orchestrator` | `orchestrator.py` | 状态机驱动，检查点恢复，错误边界 |
-| `PrewritingModule` | `prewriting.py` | 生成 WorldBible + CharacterProfile[]，初始化 CharacterState |
+| `PrewritingModule` | `prewriting.py` | 生成 WorldBible，委托 CharactersLoader 准备角色，初始化 CharacterState |
+| `CharactersLoader` | `characters_loader.py` | 一人一档 YAML 读写、缺失模块自动补全、文件↔DB 对账（增删改重写） |
 | `Outliner` | `outliner.py` | 三层大纲生成，产出 ConstraintBox[] |
 | `ContextManager` | `context_manager.py` | 唯一读状态入口，组装 ContextPackage，按角色过滤 knowledge |
 | `CharacterAgent` | `agents/character.py` | 接收 ContextPackage，输出 CharacterLine |
@@ -447,8 +533,10 @@ def validate_and_apply(self, proposal: StateChangeProposal) -> None:
 数据库路径由配置文件 `db.path` 控制（默认 `novel.db`）。
 
 ```sql
--- 角色档案（写作前生成，基本不变）
-characters          (id, name, persona, voice, arc)
+-- 角色档案（写作前生成，可经 characters sync 增删改）
+characters          (id, name, persona, voice, arc,
+                     background JSON, speech_style JSON, dialogue_mode JSON,
+                     removed)   -- removed=1 为软删除（记录保留，不再登场）
 
 -- 世界设定（单行，id=1）
 world_bible         (id, setting, rules JSON, key_facts JSON)
@@ -491,7 +579,7 @@ sqlite3 novel.db "SELECT scene_id, word_count FROM manuscripts ORDER BY rowid;"
 ## 测试
 
 ```bash
-# 运行全部测试（49 个）
+# 运行全部测试（70 个）
 PYTHONPATH=/home/zihan/writing \
   /home/zihan/miniconda3/envs/novel-pipeline/bin/pytest tests/ -v
 ```
@@ -502,7 +590,8 @@ PYTHONPATH=/home/zihan/writing \
 |------|---------|
 | `test_models.py` | Pydantic 模型字段校验 |
 | `test_config.py` | YAML 配置加载 |
-| `test_persistence.py` | SQLite CRUD、写关门、信息差、检查点回滚 |
+| `test_persistence.py` | SQLite CRUD、写关门、信息差、检查点回滚、角色模块持久化、软删除 |
+| `test_characters_loader.py` | 一人一档读写、自动补全、文件↔DB 对账（增/删/改/重写） |
 | `test_llm.py` | JSON 解析、markdown 围栏剥离、重试逻辑 |
 | `test_prewriting.py` | WorldBible 生成、角色初始化 |
 | `test_outliner.py` | 大纲生成、ConstraintBox 写入 |
@@ -558,7 +647,8 @@ _FIELD_SQL["inventory"] = "UPDATE character_states SET inventory = ? WHERE char_
 
 ```
 prewriting_world.j2       # 世界设定生成
-prewriting_character.j2   # 角色档案生成
+prewriting_character.j2   # 角色档案批量生成（含背景/语言风格/对话模式）
+prewriting_character_enrich.j2  # 补全单个角色缺失的设计模块
 outliner_acts.j2          # 幕/转折点生成
 outliner_chapters.j2      # 章节生成
 outliner_scenes.j2        # 场景约束盒生成
@@ -632,7 +722,7 @@ grep -rn "INSERT\|UPDATE\|DELETE" novel_pipeline/ \
 ```bash
 PYTHONPATH=/home/zihan/writing \
   /home/zihan/miniconda3/envs/novel-pipeline/bin/pytest tests/ -v
-# 49 passed
+# 70 passed
 ```
 
 ---
@@ -649,6 +739,7 @@ novel_pipeline/
 ├── llm.py               # Anthropic API 封装
 ├── context_manager.py   # 唯一读状态入口，组装 ContextPackage
 ├── prewriting.py        # PrewritingModule
+├── characters_loader.py # 一人一档 YAML 读写 + 自动补全 + 文件↔DB 对账
 ├── outliner.py          # Outliner（三层大纲）
 ├── scene_runner.py      # SceneRunner（场景级主循环）
 ├── critic.py            # Critic + Reviser
@@ -661,6 +752,7 @@ novel_pipeline/
     ├── loader.py         # Jinja2 环境 + render() 函数
     ├── prewriting_world.j2
     ├── prewriting_character.j2
+    ├── prewriting_character_enrich.j2
     ├── outliner_acts.j2
     ├── outliner_chapters.j2
     ├── outliner_scenes.j2
@@ -678,6 +770,7 @@ tests/
 ├── test_persistence.py
 ├── test_llm.py
 ├── test_prewriting.py
+├── test_characters_loader.py
 ├── test_outliner.py
 ├── test_context_manager.py
 ├── test_agents.py

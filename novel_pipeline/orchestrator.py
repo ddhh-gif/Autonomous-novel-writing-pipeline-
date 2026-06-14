@@ -8,6 +8,7 @@ from novel_pipeline.agents.director import DirectorAgent
 from novel_pipeline.agents.drafter import Drafter
 from novel_pipeline.critic import Critic, Reviser
 from novel_pipeline.prewriting import PrewritingModule
+from novel_pipeline.characters_loader import CharactersLoader, SyncReport
 from novel_pipeline.outliner import Outliner
 from novel_pipeline.scene_runner import SceneRunner
 
@@ -23,7 +24,12 @@ class Orchestrator:
         drafter = Drafter(self._llm)
         critic = Critic(self._llm)
         reviser = Reviser(self._llm)
-        self._prewriting = PrewritingModule(self._llm, self._db)
+        self._char_loader = CharactersLoader(
+            llm=self._llm, persistence=self._db,
+            characters_dir=self._cfg.pipeline.characters_dir,
+            auto_enrich=self._cfg.pipeline.auto_enrich,
+        )
+        self._prewriting = PrewritingModule(self._llm, self._db, self._char_loader)
         self._outliner = Outliner(self._llm, self._db)
         self._runner = SceneRunner(
             persistence=self._db, llm=self._llm, context_manager=self._cm,
@@ -74,6 +80,26 @@ class Orchestrator:
     def rollback(self, checkpoint_id: str) -> None:
         self._db.restore_checkpoint(checkpoint_id)
         print(f"Restored checkpoint {checkpoint_id}")
+
+    # ---------- 角色生命周期管理 ----------
+
+    def characters_list(self) -> list[dict]:
+        rows = []
+        for c in self._db.get_all_characters(include_removed=True):
+            rows.append({
+                "id": c.id,
+                "name": c.name,
+                "removed": self._db.is_character_removed(c.id),
+                "modules_filled": [m for m in ("background", "speech_style", "dialogue_mode")
+                                   if m not in c.missing_modules()],
+            })
+        return rows
+
+    def characters_sync(self, premise: str | None = None) -> SyncReport:
+        return self._char_loader.sync(premise=premise)
+
+    def characters_regen(self, char_id: str, premise: str | None = None):
+        return self._char_loader.regen(char_id, premise=premise)
 
     def status(self) -> dict:
         cp = self._db.get_latest_checkpoint()

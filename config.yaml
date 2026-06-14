@@ -12,6 +12,8 @@ pipeline:
   max_turns_per_scene: 40
   max_rollbacks_per_scene: 3
   target_words: 20000
+  characters_dir: characters   # 一人一档 YAML 目录（可手动增删改）
+  auto_enrich: true            # 自动补全角色缺失的背景/语言风格/对话模式
 
 db:
   path: novel.db

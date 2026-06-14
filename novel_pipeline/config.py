@@ -20,6 +20,8 @@ class PipelineConfig:
     max_turns_per_scene: int = 40
     max_rollbacks_per_scene: int = 3
     target_words: int = 20000
+    characters_dir: str = "characters"   # 一人一档 YAML 目录
+    auto_enrich: bool = True             # 自动补全角色缺失的设计模块
 
 
 @dataclass

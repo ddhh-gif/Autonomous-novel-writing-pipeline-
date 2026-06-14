@@ -4,6 +4,7 @@ from novel_pipeline.models import (
     CharacterProfile, WorldBible, ActBeat, Chapter, ConstraintBox,
     CharacterState, StateChangeProposal, StateChangeItem,
     SceneTranscriptEntry, Manuscript, CheckpointRecord,
+    Background, SpeechStyle, DialogueMode,
 )
 
 
@@ -32,6 +33,39 @@ def test_get_all_characters(db):
     db.save_character(_char("c1"))
     db.save_character(_char("c2"))
     assert len(db.get_all_characters()) == 2
+
+
+def test_character_modules_roundtrip(db):
+    char = CharacterProfile(
+        id="c1", name="林深", persona="p", voice="v", arc="a→b",
+        background=Background(occupation="侦探", secrets=["真名非林深"]),
+        speech_style=SpeechStyle(language_register="冷峻", catchphrases=["线索不会撒谎。"]),
+        dialogue_mode=DialogueMode(assertiveness="强势", taboo_topics=["过去"]),
+    )
+    db.save_character(char)
+    out = db.get_character("c1")
+    assert out.background.occupation == "侦探"
+    assert out.speech_style.catchphrases == ["线索不会撒谎。"]
+    assert out.dialogue_mode.taboo_topics == ["过去"]
+
+
+def test_soft_delete_and_filter(db):
+    db.save_character(_char("c1"))
+    db.save_character(_char("c2"))
+    db.set_character_removed("c1", True)
+    assert db.is_character_removed("c1") is True
+    ids = {c.id for c in db.get_all_characters()}
+    assert ids == {"c2"}
+    assert {c.id for c in db.get_all_characters(include_removed=True)} == {"c1", "c2"}
+    # 软删除不影响通过 id 直接取用
+    assert db.get_character("c1").name == "张三"
+
+
+def test_save_character_preserves_removed_flag(db):
+    db.save_character(_char("c1"))
+    db.set_character_removed("c1", True)
+    db.save_character(_char("c1"))  # 再次保存（如补全后回写）
+    assert db.is_character_removed("c1") is True
 
 
 def test_save_and_get_world_bible(db):

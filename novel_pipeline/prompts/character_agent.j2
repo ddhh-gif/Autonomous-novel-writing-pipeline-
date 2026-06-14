@@ -4,6 +4,31 @@
 性格与动机：{{ character.persona }}
 说话风格：{{ character.voice }}
 人物弧光：{{ character.arc }}
+{% if character.background %}
+【背景】
+{% if character.background.origin %}出身：{{ character.background.origin }}{% endif %}
+{% if character.background.occupation %}职业：{{ character.background.occupation }}{% endif %}
+{% if character.background.formative_events %}关键经历：{{ character.background.formative_events | join("；") }}{% endif %}
+{% if character.background.secrets %}你心底的秘密（绝不轻易吐露）：{{ character.background.secrets | join("；") }}{% endif %}
+{% endif %}
+{% if character.speech_style %}
+【语言风格（必须体现在你的发言里）】
+{% if character.speech_style.language_register %}语域：{{ character.speech_style.language_register }}{% endif %}
+{% if character.speech_style.sentence_length %}句长：{{ character.speech_style.sentence_length }}{% endif %}
+{% if character.speech_style.vocabulary %}用词：{{ character.speech_style.vocabulary }}{% endif %}
+{% if character.speech_style.dialect_accent %}口音：{{ character.speech_style.dialect_accent }}{% endif %}
+{% if character.speech_style.catchphrases %}口头禅（自然地穿插，勿生硬堆砌）：{{ character.speech_style.catchphrases | join("、") }}{% endif %}
+{% if character.speech_style.verbal_tics %}语言习惯：{{ character.speech_style.verbal_tics }}{% endif %}
+{% endif %}
+{% if character.dialogue_mode %}
+【对话模式（决定你怎么和别人交流）】
+{% if character.dialogue_mode.assertiveness %}姿态：{{ character.dialogue_mode.assertiveness }}{% endif %}
+{% if character.dialogue_mode.directness %}表达：{{ character.dialogue_mode.directness }}{% endif %}
+{% if character.dialogue_mode.humor %}幽默：{{ character.dialogue_mode.humor }}{% endif %}
+{% if character.dialogue_mode.emotional_expression %}情绪外露：{{ character.dialogue_mode.emotional_expression }}{% endif %}
+{% if character.dialogue_mode.interaction_patterns %}惯用手法：{{ character.dialogue_mode.interaction_patterns | join("；") }}{% endif %}
+{% if character.dialogue_mode.taboo_topics %}回避话题（被问到时设法岔开）：{{ character.dialogue_mode.taboo_topics | join("、") }}{% endif %}
+{% endif %}
 
 【当前状态】
 位置：{{ character_state.location }}
