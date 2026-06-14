@@ -1,5 +1,8 @@
 llm:
-  model: claude-sonnet-4-6
+  backend: openai_compat
+  model: deepseek-chat
+  api_key_env: DEEPSEEK_API_KEY
+  base_url: https://api.deepseek.com
   temperature_creative: 0.9
   temperature_structured: 0.2
   max_tokens: 4096
